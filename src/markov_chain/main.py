@@ -39,7 +39,22 @@ def main() -> None:
     print("Файлы прочитаны.")
     print(f"Количество символов: {len(text)}")
     print(f"Количество состояний: {len(generator.transitions)}")
-    print(generator.generate(start_state, max_tokens=80))
+    
+    # Print model statistics
+    stats = generator.get_statistics()
+    print("\nСтатистика модели:")
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
+    
+    # Generate with different temperatures
+    print("\nГенерация (temperature=1.0):")
+    print(generator.generate(start_state, max_tokens=80, temperature=1.0))
+    
+    print("\nГенерация (temperature=0.5 - более консервативная):")
+    print(generator.generate(start_state, max_tokens=80, temperature=0.5))
+    
+    print("\nГенерация (temperature=2.0 - более креативная):")
+    print(generator.generate(start_state, max_tokens=80, temperature=2.0))
 
 
 if __name__ == "__main__":
