@@ -28,11 +28,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-tokens", type=int, default=20, help="Minimum generated tokens before stopping.")
     parser.add_argument("--temperature", type=float, default=1.0, help="Generation temperature.")
     parser.add_argument("--runs", type=int, default=3, help="Number of generated texts.")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    if args.seed is not None:
+        random.seed(args.seed)
+
     data_folder = Path(__file__).resolve().parents[2] / "data" / "processed"
     included_files = [
         "turgenev_mumu.txt",
@@ -62,6 +67,7 @@ def main() -> None:
     print(f"  min_tokens: {args.min_tokens}")
     print(f"  temperature: {args.temperature}")
     print(f"  runs: {args.runs}")
+    print(f"  seed: {args.seed if args.seed is not None else 'random'}")
 
     for run_number in range(1, args.runs + 1):
         start_state = choose_start_state(generator)
