@@ -23,6 +23,7 @@ def choose_start_state(generator: MarkovTextGenerator) -> tuple[str, ...]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Text generator based on Markov chains.")
+    parser.add_argument("--start-state", type=str, default=None, help="The starting state of the Markov chain.")
     parser.add_argument("--order", type=int, default=3, help="Order of the Markov chain.")
     parser.add_argument("--max-tokens", type=int, default=80, help="Maximum generated tokens.")
     parser.add_argument("--min-tokens", type=int, default=20, help="Minimum generated tokens before stopping.")
@@ -49,7 +50,18 @@ def main() -> None:
     for file_name in included_files:
         text += read_texts_from_folder(str(data_folder / file_name))
 
-    generator = MarkovTextGenerator(order=args.order)
+    if args.start_state is not None:
+        start_state_len = len(args.start_state.split())
+
+        if start_state_len != args.order:
+            print(f"WARNING: overwritting order={args.order} to match the len(start_state)={start_state_len}")
+        
+        order = start_state_len
+        generator = MarkovTextGenerator(order=start_state_len)
+    else:
+        order = args.order
+        generator = MarkovTextGenerator(order=args.order)
+
     generator.train_from_text(text)
 
     print("Файлы прочитаны.")
@@ -62,7 +74,7 @@ def main() -> None:
         print(f"  {key}: {value}")
 
     print("\nПараметры запуска:")
-    print(f"  order: {args.order}")
+    print(f"  order: {order}")
     print(f"  max_tokens: {args.max_tokens}")
     print(f"  min_tokens: {args.min_tokens}")
     print(f"  temperature: {args.temperature}")
@@ -70,7 +82,10 @@ def main() -> None:
     print(f"  seed: {args.seed if args.seed is not None else 'random'}")
 
     for run_number in range(1, args.runs + 1):
-        start_state = choose_start_state(generator)
+        if args.start_state is not None:
+            start_state = tuple(args.start_state.split())
+        else:
+            start_state = choose_start_state(generator)
         print(f"\nГенерация {run_number}:")
         print(
             generator.generate(
