@@ -7,7 +7,7 @@
 - данные разложены на `raw` и `processed`;
 - очищены тексты для дальнейшей работы с цепями Маркова;
 - добавлен `reader.py` для чтения текстов;
-- добавлен отдельный запуск через `main.py`;
+- добавлен запуск через `main.py` с параметрами;
 - ядро `markov_core.py` перенесено в `src/markov_chain`.
 
 Датасет:
@@ -20,5 +20,19 @@
 Запуск:
 
 ```bash
-.venv/bin/python src/markov_chain/main.py
+python src/markov_chain/main.py
+```
+
+Параметры запуска:
+
+- `order` — порядок цепи Маркова;
+- `max-tokens` — максимальная длина генерации;
+- `min-tokens` — минимальная длина до разрешения остановки;
+- `temperature` — степень случайности генерации;
+- `runs` — количество генераций за один запуск.
+
+Пример запуска с параметрами:
+
+```bash
+python src/markov_chain/main.py --order 3 --max-tokens 80 --min-tokens 20 --temperature 1.0 --runs 3
 ```

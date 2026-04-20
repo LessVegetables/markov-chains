@@ -33,16 +33,128 @@ class ModelNotTrainedError(MarkovError):
 TransitionTable = dict[tuple[str, ...], dict[str, int]]
 
 
-class MarkovTextGenerator:
-    __slots__ = ("order", "transitions", "_total_transitions", "_token_frequencies")
+class Tokenizer:
+    """Улучшенная токенизация текста с дополнительными опциями."""
 
-    def __init__(self, order: int = 2) -> None:
+    def __init__(
+        self,
+        lowercase: bool = False,
+        normalize_yo: bool = False,
+        remove_urls: bool = False,
+        remove_emails: bool = False,
+        preserve_case_for_sentences: bool = True,
+    ) -> None:
+        self.lowercase = lowercase
+        self.normalize_yo = normalize_yo
+        self.remove_urls = remove_urls
+        self.remove_emails = remove_emails
+        self.preserve_case_for_sentences = preserve_case_for_sentences
+
+    def preprocess(self, text: str) -> str:
+        """Предобработка текста перед токенизацией."""
+        if self.remove_urls:
+            text = self._remove_urls(text)
+        if self.remove_emails:
+            text = self._remove_emails(text)
+        if self.normalize_yo:
+            text = self._normalize_yo(text)
+        if self.lowercase and not self.preserve_case_for_sentences:
+            text = text.lower()
+        return text.strip()
+
+    @staticmethod
+    def _remove_urls(text: str) -> str:
+        """Удалить URL из текста."""
+        url_pattern = r'https?://[^\s<>"{}|\\^`[\]]+'
+        return re.sub(url_pattern, '', text)
+
+    @staticmethod
+    def _remove_emails(text: str) -> str:
+        """Удалить email-адреса из текста."""
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        return re.sub(email_pattern, '', text)
+
+    @staticmethod
+    def _normalize_yo(text: str) -> str:
+        """Нормализовать русские Ё/ё к Е/е."""
+        return text.replace('ё', 'е').replace('Ё', 'Е')
+
+    def tokenize(self, text: str) -> list[str]:
+        """Токенизировать текст."""
+        text = self.preprocess(text)
+        tokens = re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+
+        if self.lowercase and self.preserve_case_for_sentences:
+            # Приводим к lowercase, но сохраняем заглавные в начале предложений
+            tokens = self._smart_lowercase(tokens)
+
+        return tokens
+
+    def _smart_lowercase(self, tokens: list[str]) -> list[str]:
+        """Умное приведение к lowercase: сохраняет заглавные в начале предложений."""
+        result = []
+        sentence_starters = {'.', '!', '?', '…', '...'}
+
+        for i, token in enumerate(tokens):
+            if i == 0:
+                # Первый токен оставляем как есть (вероятно, заглавная)
+                result.append(token)
+            elif i > 0 and tokens[i - 1] in sentence_starters:
+                # После знака конца предложения - оставляем заглавную
+                result.append(token)
+            else:
+                # Остальное в lowercase
+                result.append(token.lower())
+
+        return result
+
+    def split_sentences(self, text: str) -> list[str]:
+        """Разбить текст на предложения."""
+        # Защищаем сокращения
+        abbreviations = r'(?:т\.е|т\.к|и\.т\.д|и\.т\.п|др|г|гг|ул|пр|тел|etc|vs|e\.g|i\.e|mr|mrs|ms|dr|prof)'
+        text = re.sub(rf'({abbreviations})\.', r'\1<DOT>', text, flags=re.IGNORECASE)
+
+        # Разбиваем по концам предложений
+        pattern = r'(?<=[.!?…])\s+(?=[А-ЯA-Z«"\'\(])'
+        sentences = re.split(pattern, text)
+
+        # Восстанавливаем точки в сокращениях и очищаем
+        sentences = [s.replace('<DOT>', '.').strip() for s in sentences if s.strip()]
+
+        return sentences
+
+
+class MarkovTextGenerator:
+    __slots__ = ("order", "_tokenizer", "transitions", "_total_transitions", "_token_frequencies")
+
+    def __init__(self, order: int = 2, tokenizer: Tokenizer | None = None) -> None:
         if order < 1:
             raise ValueError("order must be >= 1")
         self.order = order
+        self._tokenizer = tokenizer if tokenizer else Tokenizer()
         self.transitions: TransitionTable = {}
         self._total_transitions: int = 0
         self._token_frequencies: dict[str, int] = {}
+
+    def __repr__(self) -> str:
+        status = "trained" if self.transitions else "untrained"
+        return f"MarkovTextGenerator(order={self.order}, {status}, states={len(self.transitions)})"
+
+    def clear(self) -> None:
+        """Сбросить модель к начальному состоянию."""
+        self.transitions = {}
+        self._total_transitions = 0
+        self._token_frequencies = {}
+
+    def is_trained(self) -> bool:
+        """Проверить, обучена ли модель."""
+        return bool(self.transitions)
+
+    def get_random_start_state(self) -> tuple[str, ...]:
+        """Получить случайное начальное состояние из обученной модели."""
+        if not self.is_trained():
+            raise ModelNotTrainedError("Модель не обучена.")
+        return random.choice(list(self.transitions.keys()))
 
     def read_text(self, file_path: str | Path) -> str:
         path = Path(file_path)
@@ -54,12 +166,16 @@ class MarkovTextGenerator:
         return text
 
     def tokenize(self, text: str) -> list[str]:
-        tokens = re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+        tokens = self._tokenizer.tokenize(text)
         if len(tokens) <= self.order:
             raise TooShortTextError(
                 f"Текст слишком короткий для order={self.order}. Нужно больше {self.order} токенов."
             )
         return tokens
+
+    def split_sentences(self, text: str) -> list[str]:
+        """Разбить текст на предложения."""
+        return self._tokenizer.split_sentences(text)
 
     def build_transitions(self, tokens: list[str]) -> TransitionTable:
         table: DefaultDict[tuple[str, ...], DefaultDict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -104,6 +220,8 @@ class MarkovTextGenerator:
         max_tokens: int = 30,
         temperature: float = 1.0,
         stop_tokens: set[str] | None = None,
+        min_tokens: int = 20,
+        extra_tokens: int = 20,
     ) -> str:
         if not self.transitions:
             raise ModelNotTrainedError("Модель не обучена. Сначала вызовите train_from_text(...).")
@@ -122,7 +240,7 @@ class MarkovTextGenerator:
         result = list(state)
         current_state = state
 
-        for _ in range(max_tokens):
+        for step in range(max_tokens + extra_tokens):
             next_options = self.transitions.get(current_state)
             if not next_options:
                 break
@@ -130,7 +248,9 @@ class MarkovTextGenerator:
             next_token = self._weighted_choice(next_options, temperature)
             result.append(next_token)
 
-            if next_token in stop_tokens:
+            generated_tokens = len(result) - len(state)
+
+            if generated_tokens >= min_tokens and next_token in stop_tokens:
                 break
 
             current_state = tuple(result[-self.order :])
