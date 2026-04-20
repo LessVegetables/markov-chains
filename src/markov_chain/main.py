@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Text generator based on Markov chains.")
     parser.add_argument("--order", type=int, default=3, help="Order of the Markov chain.")
     parser.add_argument("--max-tokens", type=int, default=80, help="Maximum generated tokens.")
+    parser.add_argument("--min-tokens", type=int, default=20, help="Minimum generated tokens before stopping.")
     parser.add_argument("--temperature", type=float, default=1.0, help="Generation temperature.")
     parser.add_argument("--runs", type=int, default=3, help="Number of generated texts.")
     return parser.parse_args()
@@ -58,6 +59,7 @@ def main() -> None:
     print("\nПараметры запуска:")
     print(f"  order: {args.order}")
     print(f"  max_tokens: {args.max_tokens}")
+    print(f"  min_tokens: {args.min_tokens}")
     print(f"  temperature: {args.temperature}")
     print(f"  runs: {args.runs}")
 
@@ -68,6 +70,7 @@ def main() -> None:
             generator.generate(
                 start_state,
                 max_tokens=args.max_tokens,
+                min_tokens=args.min_tokens,
                 temperature=args.temperature,
             )
         )

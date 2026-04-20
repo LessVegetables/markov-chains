@@ -104,6 +104,8 @@ class MarkovTextGenerator:
         max_tokens: int = 30,
         temperature: float = 1.0,
         stop_tokens: set[str] | None = None,
+        min_tokens: int = 20,
+        extra_tokens: int = 20,
     ) -> str:
         if not self.transitions:
             raise ModelNotTrainedError("Модель не обучена. Сначала вызовите train_from_text(...).")
@@ -122,7 +124,7 @@ class MarkovTextGenerator:
         result = list(state)
         current_state = state
 
-        for _ in range(max_tokens):
+        for step in range(max_tokens + extra_tokens):
             next_options = self.transitions.get(current_state)
             if not next_options:
                 break
@@ -130,7 +132,9 @@ class MarkovTextGenerator:
             next_token = self._weighted_choice(next_options, temperature)
             result.append(next_token)
 
-            if next_token in stop_tokens:
+            generated_tokens = len(result) - len(state)
+
+            if generated_tokens >= min_tokens and next_token in stop_tokens:
                 break
 
             current_state = tuple(result[-self.order :])
