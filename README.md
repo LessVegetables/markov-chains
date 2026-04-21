@@ -44,5 +44,5 @@ docker build -t markov_chain_streamlit .
 ```
 
 ```sh
-docker run -d -p 127.0.0.1:8501:8501 --name markov_chain_app --restart unless-stopped markov_chain_image
+docker run -d -p 127.0.0.1:8501:8501 --name markov_chain_app --restart unless-stopped markov_chain_streamlit
 ```
