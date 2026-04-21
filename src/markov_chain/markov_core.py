@@ -9,6 +9,11 @@ import random
 import re
 from typing import DefaultDict
 
+try:
+    from .reader import read_texts_from_folder
+except ImportError:
+    from reader import read_texts_from_folder
+
 
 class MarkovError(Exception):
     pass
@@ -31,6 +36,11 @@ class ModelNotTrainedError(MarkovError):
 
 
 TransitionTable = dict[tuple[str, ...], dict[str, int]]
+
+DEFAULT_DATASET_FILES = [
+    "turgenev_mumu.txt",
+    "turgenev_dvoryanskoe_gnezdo.txt",
+]
 
 
 class Tokenizer:
@@ -214,6 +224,15 @@ class MarkovTextGenerator:
         combined_text = " ".join(all_text)
         return self.train_from_text(combined_text)
 
+    def load_default_dataset(self) -> TransitionTable:
+        data_folder = Path(__file__).resolve().parents[2] / "data" / "processed"
+        text = ""
+
+        for file_name in DEFAULT_DATASET_FILES:
+            text += read_texts_from_folder(str(data_folder / file_name))
+
+        return self.train_from_text(text)
+
     def generate(
         self,
         start_state: tuple[str, ...] | list[str],
@@ -256,6 +275,23 @@ class MarkovTextGenerator:
             current_state = tuple(result[-self.order :])
 
         return self._join_tokens(result)
+
+    def generate_from_seed(
+        self,
+        seed_text: str,
+        max_tokens: int = 30,
+        temperature: float = 1.0,
+        min_tokens: int = 20,
+        extra_tokens: int = 20,
+    ) -> str:
+        start_state = tuple(seed_text.split())
+        return self.generate(
+            start_state=start_state,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            min_tokens=min_tokens,
+            extra_tokens=extra_tokens,
+        )
 
     def _weighted_choice(self, options: dict[str, int], temperature: float) -> str:
         if temperature <= 0:
