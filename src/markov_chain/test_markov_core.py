@@ -1,5 +1,3 @@
-"""Базовые тесты для markov_core.py."""
-
 import tempfile
 from pathlib import Path
 
@@ -14,6 +12,7 @@ from markov_core import (
     UnknownStateError,
 )
 
+"""Базовые тесты для markov_core.py."""
 
 class TestInitialization:
     """Тесты инициализации генератора."""
