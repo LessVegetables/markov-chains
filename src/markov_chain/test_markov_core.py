@@ -180,6 +180,36 @@ class TestGeneration:
         with pytest.raises(ModelNotTrainedError):
             gen.get_random_start_state()
 
+    def test_generate_text_without_start_text(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+        gen.train_from_text("the cat sat on the mat the cat ran away")
+
+        result = gen.generate_text(max_tokens=5, min_tokens=1)
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_generate_text_falls_back_for_unknown_start(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+        gen.train_from_text("the cat sat on the mat the cat ran away")
+
+        result = gen.generate_text("unknown state", max_tokens=5, min_tokens=1)
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_generate_text_strict_unknown_start(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+        gen.train_from_text("the cat sat on the mat the cat ran away")
+
+        with pytest.raises(UnknownStateError):
+            gen.generate_text("unknown state", strict_start=True)
+
+    def test_generate_text_invalid_length(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+        gen.train_from_text("the cat sat on the mat")
+
+        with pytest.raises(ValueError, match="max_tokens must be >= 1"):
+            gen.generate_text(max_tokens=0)
+
 
 class TestWeightedChoice:
     """Тесты взвешенного выбора."""
@@ -244,9 +274,28 @@ class TestStatistics:
         assert "order" in stats
         assert "unique_states" in stats
         assert "unique_tokens" in stats
+        assert "source_tokens" in stats
         assert "total_transitions" in stats
         assert "entropy_bits" in stats
         assert "perplexity" in stats
+        assert "vocabulary_coverage" in stats
+
+    def test_get_transition_snapshot(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+        gen.train_from_text("the cat sat on the mat the cat ran")
+
+        snapshot = gen.get_transition_snapshot(limit=2)
+
+        assert len(snapshot) == 2
+        assert "state" in snapshot[0]
+        assert "transitions" in snapshot[0]
+        assert "probability" in snapshot[0]["transitions"][0]
+
+    def test_get_transition_snapshot_untrained(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+
+        with pytest.raises(ModelNotTrainedError):
+            gen.get_transition_snapshot()
 
 
 class TestSerialization:
@@ -263,6 +312,7 @@ class TestSerialization:
             loaded = MarkovTextGenerator.load_model(path)
             assert loaded.order == gen.order
             assert loaded.transitions == gen.transitions
+            assert loaded._source_token_count == gen._source_token_count
 
     def test_save_creates_directory(self) -> None:
         gen = MarkovTextGenerator(order=2)

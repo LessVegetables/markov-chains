@@ -135,7 +135,14 @@ class Tokenizer:
 
 
 class MarkovTextGenerator:
-    __slots__ = ("order", "_tokenizer", "transitions", "_total_transitions", "_token_frequencies")
+    __slots__ = (
+        "order",
+        "_tokenizer",
+        "transitions",
+        "_total_transitions",
+        "_token_frequencies",
+        "_source_token_count",
+    )
 
     def __init__(self, order: int = 2, tokenizer: Tokenizer | None = None) -> None:
         if order < 1:
@@ -145,6 +152,7 @@ class MarkovTextGenerator:
         self.transitions: TransitionTable = {}
         self._total_transitions: int = 0
         self._token_frequencies: dict[str, int] = {}
+        self._source_token_count: int = 0
 
     def __repr__(self) -> str:
         status = "trained" if self.transitions else "untrained"
@@ -155,6 +163,7 @@ class MarkovTextGenerator:
         self.transitions = {}
         self._total_transitions = 0
         self._token_frequencies = {}
+        self._source_token_count = 0
 
     def is_trained(self) -> bool:
         """Проверить, обучена ли модель."""
@@ -170,7 +179,16 @@ class MarkovTextGenerator:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"Файл не найден: {path}")
-        text = path.read_text(encoding="utf-8").strip()
+
+        text = ""
+        encodings = ("utf-8", "utf-8-sig", "cp1251", "iso-8859-5", "koi8-r")
+        for encoding in encodings:
+            try:
+                text = path.read_text(encoding=encoding).strip()
+                break
+            except UnicodeDecodeError:
+                continue
+
         if not text:
             raise EmptyFileError("Файл пустой или содержит только пробелы.")
         return text
@@ -189,6 +207,7 @@ class MarkovTextGenerator:
 
     def build_transitions(self, tokens: list[str]) -> TransitionTable:
         table: DefaultDict[tuple[str, ...], DefaultDict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self._source_token_count = len(tokens)
 
         for i in range(len(tokens) - self.order):
             state = tuple(tokens[i : i + self.order])
@@ -232,6 +251,27 @@ class MarkovTextGenerator:
             text += read_texts_from_folder(str(data_folder / file_name))
 
         return self.train_from_text(text)
+
+    def get_transition_snapshot(self, limit: int = 20) -> list[dict[str, object]]:
+        """Вернуть часть таблицы переходов в удобном для консоли/UI виде."""
+        if not self.transitions:
+            raise ModelNotTrainedError("Модель не обучена.")
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+
+        snapshot = []
+        for state, next_map in list(self.transitions.items())[:limit]:
+            total = sum(next_map.values())
+            transitions = [
+                {
+                    "token": token,
+                    "count": count,
+                    "probability": round(count / total, 4),
+                }
+                for token, count in sorted(next_map.items(), key=lambda item: item[1], reverse=True)
+            ]
+            snapshot.append({"state": state, "transitions": transitions})
+        return snapshot
 
     def generate(
         self,
@@ -293,6 +333,46 @@ class MarkovTextGenerator:
             extra_tokens=extra_tokens,
         )
 
+    def generate_text(
+        self,
+        start_text: str | None = None,
+        max_tokens: int = 30,
+        temperature: float = 1.0,
+        min_tokens: int = 20,
+        stop_tokens: set[str] | None = None,
+        strict_start: bool = False,
+    ) -> str:
+        """Сгенерировать текст с удобным API для интерфейса.
+
+        Если start_text не задан или не найден в модели, метод выбирает случайное
+        начальное состояние. При strict_start=True неизвестное состояние вызовет ошибку.
+        """
+        if not self.transitions:
+            raise ModelNotTrainedError("Модель не обучена. Сначала вызовите train_from_text(...).")
+        if max_tokens < 1:
+            raise ValueError("max_tokens must be >= 1")
+        if min_tokens < 0:
+            raise ValueError("min_tokens must be >= 0")
+
+        state: tuple[str, ...]
+        if start_text:
+            tokens = self._tokenizer.tokenize(start_text)
+            state = tuple(tokens[-self.order :])
+            if len(state) != self.order or state not in self.transitions:
+                if strict_start:
+                    raise UnknownStateError(f"Неизвестное начальное состояние: {state}")
+                state = self.get_random_start_state()
+        else:
+            state = self.get_random_start_state()
+
+        return self.generate(
+            state,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_tokens=stop_tokens,
+            min_tokens=min_tokens,
+        )
+
     def _weighted_choice(self, options: dict[str, int], temperature: float) -> str:
         if temperature <= 0:
             raise ValueError("temperature must be > 0")
@@ -343,12 +423,13 @@ class MarkovTextGenerator:
             "order": self.order,
             "unique_states": unique_states,
             "unique_tokens": unique_tokens,
+            "source_tokens": self._source_token_count,
             "total_transitions": self._total_transitions,
             "avg_branching_factor": round(avg_branching, 2),
             "max_branching_factor": max_branching,
             "entropy_bits": round(self.get_entropy(), 4),
             "perplexity": round(self.get_perplexity(), 4),
-            "coverage": round(unique_tokens / max(unique_tokens, 1) * 100, 2),
+            "vocabulary_coverage": round(unique_tokens / max(self._source_token_count, 1) * 100, 2),
         }
 
     def save_model(self, file_path: str | Path) -> None:
@@ -361,6 +442,7 @@ class MarkovTextGenerator:
                     "transitions": self.transitions,
                     "_total_transitions": self._total_transitions,
                     "_token_frequencies": self._token_frequencies,
+                    "_source_token_count": self._source_token_count,
                 },
                 f,
             )
@@ -376,6 +458,7 @@ class MarkovTextGenerator:
         instance.transitions = data["transitions"]
         instance._total_transitions = data["_total_transitions"]
         instance._token_frequencies = data["_token_frequencies"]
+        instance._source_token_count = data.get("_source_token_count", 0)
         return instance
 
     @staticmethod

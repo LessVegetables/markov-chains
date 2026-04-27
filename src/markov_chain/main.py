@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 import random
+import sys
 
 from markov_core import MarkovTextGenerator
 from reader import read_texts_from_folder
@@ -30,11 +31,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=1.0, help="Generation temperature.")
     parser.add_argument("--runs", type=int, default=3, help="Number of generated texts.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility.")
+    parser.add_argument("--start-text", type=str, default=None, help="Optional text to start generation from.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -80,21 +85,35 @@ def main() -> None:
     print(f"  temperature: {args.temperature}")
     print(f"  runs: {args.runs}")
     print(f"  seed: {args.seed if args.seed is not None else 'random'}")
+    print(f"  start_text: {args.start_text if args.start_text else 'random state'}")
+    print(f"  start_state: {args.start_state if args.start_state else 'not set'}")
 
     for run_number in range(1, args.runs + 1):
+        print(f"\nГенерация {run_number}:")
         if args.start_state is not None:
             start_state = tuple(args.start_state.split())
-        else:
-            start_state = choose_start_state(generator)
-        print(f"\nГенерация {run_number}:")
-        print(
-            generator.generate(
+            generated_text = generator.generate(
                 start_state,
                 max_tokens=args.max_tokens,
                 min_tokens=args.min_tokens,
                 temperature=args.temperature,
             )
-        )
+        elif args.start_text:
+            generated_text = generator.generate_text(
+                args.start_text,
+                max_tokens=args.max_tokens,
+                min_tokens=args.min_tokens,
+                temperature=args.temperature,
+            )
+        else:
+            start_state = choose_start_state(generator)
+            generated_text = generator.generate(
+                start_state,
+                max_tokens=args.max_tokens,
+                min_tokens=args.min_tokens,
+                temperature=args.temperature,
+            )
+        print(generated_text)
 
 
 if __name__ == "__main__":
