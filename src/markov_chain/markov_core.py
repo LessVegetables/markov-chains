@@ -40,6 +40,7 @@ TransitionTable = dict[tuple[str, ...], dict[str, int]]
 DEFAULT_DATASET_FILES = [
     "turgenev_mumu.txt",
     "turgenev_dvoryanskoe_gnezdo.txt",
+    "tolstoy_voina_i_mir.txt",
 ]
 
 
@@ -142,6 +143,7 @@ class MarkovTextGenerator:
         "_total_transitions",
         "_token_frequencies",
         "_source_token_count",
+        "used_random_start",
     )
 
     def __init__(self, order: int = 2, tokenizer: Tokenizer | None = None) -> None:
@@ -153,6 +155,7 @@ class MarkovTextGenerator:
         self._total_transitions: int = 0
         self._token_frequencies: dict[str, int] = {}
         self._source_token_count: int = 0
+        self.used_random_start = False
 
     def __repr__(self) -> str:
         status = "trained" if self.transitions else "untrained"
@@ -164,6 +167,7 @@ class MarkovTextGenerator:
         self._total_transitions = 0
         self._token_frequencies = {}
         self._source_token_count = 0
+        self.used_random_start = False
 
     def is_trained(self) -> bool:
         """Проверить, обучена ли модель."""
@@ -355,14 +359,17 @@ class MarkovTextGenerator:
             raise ValueError("min_tokens must be >= 0")
 
         state: tuple[str, ...]
+        self.used_random_start = False
         if start_text:
             tokens = self._tokenizer.tokenize(start_text)
             state = tuple(tokens[-self.order :])
             if len(state) != self.order or state not in self.transitions:
                 if strict_start:
                     raise UnknownStateError(f"Неизвестное начальное состояние: {state}")
+                self.used_random_start = True
                 state = self.get_random_start_state()
         else:
+            self.used_random_start = True
             state = self.get_random_start_state()
 
         return self.generate(

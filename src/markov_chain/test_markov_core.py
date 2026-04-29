@@ -195,6 +195,16 @@ class TestGeneration:
         result = gen.generate_text("unknown state", max_tokens=5, min_tokens=1)
         assert isinstance(result, str)
         assert len(result) > 0
+        assert gen.used_random_start
+
+    def test_generate_text_known_start_does_not_use_fallback(self) -> None:
+        gen = MarkovTextGenerator(order=2)
+        gen.train_from_text("the cat sat on the mat the cat ran away")
+
+        result = gen.generate_text("the cat", max_tokens=5, min_tokens=1)
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert not gen.used_random_start
 
     def test_generate_text_strict_unknown_start(self) -> None:
         gen = MarkovTextGenerator(order=2)

@@ -13,6 +13,8 @@ if st.button("Generate"):
     
     generator = MarkovTextGenerator(order=len(userInput.split()))
     generator.load_default_dataset()
-    output = generator.generate_from_seed(userInput)
+    output = generator.generate_text(userInput)
+    if generator.used_random_start:
+        st.warning("Такого старта нет в датасете, сгенерировали случайный текст.")
 
     st.write(output)
