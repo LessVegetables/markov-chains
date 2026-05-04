@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>API &#8212; markov_chain 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="markov_chain" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="api">
+<h1>API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h1>
+<section id="module-markov_core">
+<span id="markov-core"></span><h2><code class="docutils literal notranslate"><span class="pre">markov_core</span></code><a class="headerlink" href="#module-markov_core" title="Link to this heading">¶</a></h2>
+<p>Обучение и генерация текста по марковской модели <em>n-грамм</em>.</p>
+<p>Состояние цепи — кортеж из <code class="docutils literal notranslate"><span class="pre">order</span></code> последовательных токенов; таблица переходов
+хранит частоты следующего токена для каждого состояния. Токенизацию можно
+настроить через <a class="reference internal" href="#markov_core.Tokenizer" title="markov_core.Tokenizer"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tokenizer</span></code></a> (нормализация «ё», удаление URL/email,
+поведение регистра).</p>
+<p>Типовой сценарий:</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">markov_core</span><span class="w"> </span><span class="kn">import</span> <span class="n">MarkovTextGenerator</span><span class="p">,</span> <span class="n">Tokenizer</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">MarkovTextGenerator</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span><span class="o">.</span><span class="n">train_from_text</span><span class="p">(</span><span class="s2">&quot;Пример обучающего текста. Ещё одно предложение.&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">text</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">generate_text</span><span class="p">(</span><span class="n">max_tokens</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Исключения (<a class="reference internal" href="#markov_core.MarkovError" title="markov_core.MarkovError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">MarkovError</span></code></a> и подклассы) отражают ошибки обучения,
+генерации и ввода.</p>
+<dl class="py exception">
+<dt class="sig sig-object py" id="markov_core.MarkovError">
+<em class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">MarkovError</span></span><a class="reference internal" href="_modules/markov_core.html#MarkovError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovError" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Exception</span></code></p>
+<p>Базовая ошибка ядра (обучение, генерация, ввод).</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="markov_core.EmptyFileError">
+<em class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">EmptyFileError</span></span><a class="reference internal" href="_modules/markov_core.html#EmptyFileError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.EmptyFileError" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#markov_core.MarkovError" title="markov_core.MarkovError"><code class="xref py py-class docutils literal notranslate"><span class="pre">MarkovError</span></code></a></p>
+<p>Файл пустой или после чтения не осталось значимого текста.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="markov_core.TooShortTextError">
+<em class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">TooShortTextError</span></span><a class="reference internal" href="_modules/markov_core.html#TooShortTextError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.TooShortTextError" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#markov_core.MarkovError" title="markov_core.MarkovError"><code class="xref py py-class docutils literal notranslate"><span class="pre">MarkovError</span></code></a></p>
+<p>В тексте недостаточно токенов для выбранного <code class="docutils literal notranslate"><span class="pre">order</span></code> (включая граничные случаи).</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="markov_core.UnknownStateError">
+<em class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">UnknownStateError</span></span><a class="reference internal" href="_modules/markov_core.html#UnknownStateError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.UnknownStateError" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#markov_core.MarkovError" title="markov_core.MarkovError"><code class="xref py py-class docutils literal notranslate"><span class="pre">MarkovError</span></code></a></p>
+<p>Начальное состояние отсутствует в таблице переходов (жёсткий режим или <code class="docutils literal notranslate"><span class="pre">generate</span></code>).</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="markov_core.ModelNotTrainedError">
+<em class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">ModelNotTrainedError</span></span><a class="reference internal" href="_modules/markov_core.html#ModelNotTrainedError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.ModelNotTrainedError" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#markov_core.MarkovError" title="markov_core.MarkovError"><code class="xref py py-class docutils literal notranslate"><span class="pre">MarkovError</span></code></a></p>
+<p>Операция требует обученной модели (таблица переходов пуста).</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="markov_core.TransitionTable">
+<span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">TransitionTable</span></span><a class="headerlink" href="#markov_core.TransitionTable" title="Link to this definition">¶</a></dt>
+<dd><p>состояние из <code class="docutils literal notranslate"><span class="pre">order</span></code> токенов -&gt; {следующий_токен: счётчик}.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Таблица переходов</p>
+</dd>
+</dl>
+<p>alias of <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">tuple</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, …], <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]]</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="markov_core.Tokenizer">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">Tokenizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lowercase</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize_yo</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remove_urls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remove_emails</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">preserve_case_for_sentences</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#Tokenizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.Tokenizer" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Нормализация и разбиение текста на токены перед обучением марковской модели.</p>
+<p>Токенами считаются последовательности «словных» символов (<code class="docutils literal notranslate"><span class="pre">\w+</span></code> в Unicode)
+и одиночные знаки препинания. Опционально выполняется удаление URL и e-mail,
+подстановка «ё»→«е», а также режим приведения к нижнему регистру с сохранением
+заглавных букв в начале предложений.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>lowercase</strong> (<em>bool</em>)</p></li>
+<li><p><strong>normalize_yo</strong> (<em>bool</em>)</p></li>
+<li><p><strong>remove_urls</strong> (<em>bool</em>)</p></li>
+<li><p><strong>remove_emails</strong> (<em>bool</em>)</p></li>
+<li><p><strong>preserve_case_for_sentences</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.Tokenizer.preprocess">
+<span class="sig-name descname"><span class="pre">preprocess</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#Tokenizer.preprocess"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.Tokenizer.preprocess" title="Link to this definition">¶</a></dt>
+<dd><p>Очистка и нормализация сырой строки перед <a class="reference internal" href="#markov_core.Tokenizer.tokenize" title="markov_core.Tokenizer.tokenize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">tokenize()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>text</strong> (<em>str</em>) – Исходный текст.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Строка после опциональных замен и <code class="docutils literal notranslate"><span class="pre">strip()</span></code>; без разбиения на токены.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.Tokenizer.tokenize">
+<span class="sig-name descname"><span class="pre">tokenize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#Tokenizer.tokenize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.Tokenizer.tokenize" title="Link to this definition">¶</a></dt>
+<dd><p>Разбить текст на список токенов после <a class="reference internal" href="#markov_core.Tokenizer.preprocess" title="markov_core.Tokenizer.preprocess"><code class="xref py py-meth docutils literal notranslate"><span class="pre">preprocess()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>text</strong> (<em>str</em>) – Входная строка.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Список токенов (слова и отдельные знаки препинания).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.Tokenizer.split_sentences">
+<span class="sig-name descname"><span class="pre">split_sentences</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#Tokenizer.split_sentences"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.Tokenizer.split_sentences" title="Link to this definition">¶</a></dt>
+<dd><p>Эвристически разбить текст на предложения (кириллица и латиница).</p>
+<p>Сокращения с точками временно маскируются, чтобы не резать по ним.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>text</strong> (<em>str</em>) – Исходный текст.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Список непустых предложений без лишних пробелов по краям.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">markov_core.</span></span><span class="sig-name descname"><span class="pre">MarkovTextGenerator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Марковский генератор текста по частотам <em>n-грамм</em> с фиксированным <code class="docutils literal notranslate"><span class="pre">order</span></code>.</p>
+<p>После обучения в <code class="docutils literal notranslate"><span class="pre">transitions</span></code> лежит таблица: состояние из <code class="docutils literal notranslate"><span class="pre">order</span></code>
+подряд идущих токенов отображается на счётчики возможных продолжений.
+Сэмплирование следующего токена учитывает эти счётчики; параметр
+<code class="docutils literal notranslate"><span class="pre">temperature</span></code> смягчает или усиливает пики распределения
+(см. <code class="xref py py-meth docutils literal notranslate"><span class="pre">_weighted_choice()</span></code>).</p>
+<p>Для ввода из файлов и сериализации см. <a class="reference internal" href="#markov_core.MarkovTextGenerator.read_text" title="markov_core.MarkovTextGenerator.read_text"><code class="xref py py-meth docutils literal notranslate"><span class="pre">read_text()</span></code></a>, <a class="reference internal" href="#markov_core.MarkovTextGenerator.save_model" title="markov_core.MarkovTextGenerator.save_model"><code class="xref py py-meth docutils literal notranslate"><span class="pre">save_model()</span></code></a>,
+<a class="reference internal" href="#markov_core.MarkovTextGenerator.load_model" title="markov_core.MarkovTextGenerator.load_model"><code class="xref py py-meth docutils literal notranslate"><span class="pre">load_model()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>order</strong> (<em>int</em>)</p></li>
+<li><p><strong>tokenizer</strong> (<a class="reference internal" href="#markov_core.Tokenizer" title="markov_core.Tokenizer"><em>Tokenizer</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.order">
+<span class="sig-name descname"><span class="pre">order</span></span><a class="headerlink" href="#markov_core.MarkovTextGenerator.order" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.transitions">
+<span class="sig-name descname"><span class="pre">transitions</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#markov_core.MarkovTextGenerator.transitions" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.clear">
+<span class="sig-name descname"><span class="pre">clear</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.clear"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.clear" title="Link to this definition">¶</a></dt>
+<dd><p>Очистить таблицу переходов и вспомогательную статистику (как у нового экземпляра).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.is_trained">
+<span class="sig-name descname"><span class="pre">is_trained</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.is_trained"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.is_trained" title="Link to this definition">¶</a></dt>
+<dd><p>True, если в <code class="docutils literal notranslate"><span class="pre">transitions</span></code> есть хотя бы одно состояние.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.get_random_start_state">
+<span class="sig-name descname"><span class="pre">get_random_start_state</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.get_random_start_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.get_random_start_state" title="Link to this definition">¶</a></dt>
+<dd><p>Случайно выбрать состояние из ключей <code class="docutils literal notranslate"><span class="pre">transitions</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#markov_core.ModelNotTrainedError" title="markov_core.ModelNotTrainedError"><strong>ModelNotTrainedError</strong></a> – Если модель не обучена.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple[str, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.read_text">
+<span class="sig-name descname"><span class="pre">read_text</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.read_text"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.read_text" title="Link to this definition">¶</a></dt>
+<dd><p>Прочитать файл в строку, перебирая типичные кодировки (UTF-8, CP1251, …).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_path</strong> (<em>str</em><em> | </em><em>Path</em>) – Путь к текстовому файлу.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Текст без ведущих и завершающих пробелов.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>FileNotFoundError</strong> – Если файл не найден.</p></li>
+<li><p><a class="reference internal" href="#markov_core.EmptyFileError" title="markov_core.EmptyFileError"><strong>EmptyFileError</strong></a> – Если ни одна кодировка не подошла или файл пустой/пробельный.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.tokenize">
+<span class="sig-name descname"><span class="pre">tokenize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.tokenize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.tokenize" title="Link to this definition">¶</a></dt>
+<dd><p>Токенизировать текст и проверить, что токенов больше <code class="docutils literal notranslate"><span class="pre">order</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#markov_core.TooShortTextError" title="markov_core.TooShortTextError"><strong>TooShortTextError</strong></a> – Если длина последовательности токенов &lt;= <code class="docutils literal notranslate"><span class="pre">order</span></code>.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>text</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.split_sentences">
+<span class="sig-name descname"><span class="pre">split_sentences</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.split_sentences"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.split_sentences" title="Link to this definition">¶</a></dt>
+<dd><p>То же, что <a class="reference internal" href="#markov_core.Tokenizer.split_sentences" title="markov_core.Tokenizer.split_sentences"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Tokenizer.split_sentences()</span></code></a> у встроенного токенизатора.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>text</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.build_transitions">
+<span class="sig-name descname"><span class="pre">build_transitions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tokens</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.build_transitions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.build_transitions" title="Link to this definition">¶</a></dt>
+<dd><p>Построить и записать в <code class="docutils literal notranslate"><span class="pre">self.transitions</span></code> таблицу частот переходов.</p>
+<p>Для каждого среза <code class="docutils literal notranslate"><span class="pre">tokens[i</span> <span class="pre">:</span> <span class="pre">i</span> <span class="pre">+</span> <span class="pre">order]</span></code> увеличивается счётчик
+следующего токена <code class="docutils literal notranslate"><span class="pre">tokens[i</span> <span class="pre">+</span> <span class="pre">order]</span></code>. Предыдущее содержимое таблицы
+заменяется.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>tokens</strong> (<em>list</em><em>[</em><em>str</em><em>]</em>) – Уже сегментированный текст (длина должна быть &gt; <code class="docutils literal notranslate"><span class="pre">order</span></code>).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Новая таблица переходов (тот же объект, что и <code class="docutils literal notranslate"><span class="pre">self.transitions</span></code>).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict[tuple[str, …], dict[str, int]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.train_from_text">
+<span class="sig-name descname"><span class="pre">train_from_text</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.train_from_text"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.train_from_text" title="Link to this definition">¶</a></dt>
+<dd><p>Обучить модель на одной строке: токенизация и <a class="reference internal" href="#markov_core.MarkovTextGenerator.build_transitions" title="markov_core.MarkovTextGenerator.build_transitions"><code class="xref py py-meth docutils literal notranslate"><span class="pre">build_transitions()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>text</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict[tuple[str, …], dict[str, int]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.train_from_file">
+<span class="sig-name descname"><span class="pre">train_from_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.train_from_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.train_from_file" title="Link to this definition">¶</a></dt>
+<dd><p>Прочитать файл и обучить модель (<a class="reference internal" href="#markov_core.MarkovTextGenerator.read_text" title="markov_core.MarkovTextGenerator.read_text"><code class="xref py py-meth docutils literal notranslate"><span class="pre">read_text()</span></code></a> + <a class="reference internal" href="#markov_core.MarkovTextGenerator.train_from_text" title="markov_core.MarkovTextGenerator.train_from_text"><code class="xref py py-meth docutils literal notranslate"><span class="pre">train_from_text()</span></code></a>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_path</strong> (<em>str</em><em> | </em><em>Path</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict[tuple[str, …], dict[str, int]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.train_from_multiple_files">
+<span class="sig-name descname"><span class="pre">train_from_multiple_files</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_paths</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.train_from_multiple_files"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.train_from_multiple_files" title="Link to this definition">¶</a></dt>
+<dd><p>Склеить тексты файлов через пробел и обучить модель одним вызовом.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_paths</strong> (<em>Iterable</em><em>[</em><em>str</em><em> | </em><em>Path</em><em>]</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict[tuple[str, …], dict[str, int]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.load_default_dataset">
+<span class="sig-name descname"><span class="pre">load_default_dataset</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.load_default_dataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.load_default_dataset" title="Link to this definition">¶</a></dt>
+<dd><p>Обучить на встроенном корпусе: каталог <code class="docutils literal notranslate"><span class="pre">data/processed</span></code> у корня репозитория и <code class="xref py py-data docutils literal notranslate"><span class="pre">DEFAULT_DATASET_FILES</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict[tuple[str, …], dict[str, int]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.get_transition_snapshot">
+<span class="sig-name descname"><span class="pre">get_transition_snapshot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">limit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.get_transition_snapshot"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.get_transition_snapshot" title="Link to this definition">¶</a></dt>
+<dd><p>Первые <code class="docutils literal notranslate"><span class="pre">limit</span></code> состояний с отсортированными исходящими переходами и вероятностями.</p>
+<p>Удобно для отладки и UI (просмотр «куда можно пойти» из состояния).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>limit</strong> (<em>int</em>) – Сколько состояний вернуть (в современном Python порядок ключей
+<code class="docutils literal notranslate"><span class="pre">dict</span></code> соответствует порядку вставки при обучении).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Список словарей с ключами <code class="docutils literal notranslate"><span class="pre">state</span></code> и <code class="docutils literal notranslate"><span class="pre">transitions</span></code>; внутри — <code class="docutils literal notranslate"><span class="pre">token</span></code>, <code class="docutils literal notranslate"><span class="pre">count</span></code>, <code class="docutils literal notranslate"><span class="pre">probability</span></code>.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference internal" href="#markov_core.ModelNotTrainedError" title="markov_core.ModelNotTrainedError"><strong>ModelNotTrainedError</strong></a> – Если модель пуста.</p></li>
+<li><p><strong>ValueError</strong> – Если <code class="docutils literal notranslate"><span class="pre">limit</span> <span class="pre">&lt;</span> <span class="pre">1</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>list[dict[str, object]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.generate">
+<span class="sig-name descname"><span class="pre">generate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start_state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">temperature</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extra_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.generate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.generate" title="Link to this definition">¶</a></dt>
+<dd><p>Продолжить текст из заданного <em>обученного</em> состояния длины <code class="docutils literal notranslate"><span class="pre">order</span></code>.</p>
+<p>На каждом шаге выбирается следующий токен по весам из <code class="docutils literal notranslate"><span class="pre">transitions</span></code>;
+при <code class="docutils literal notranslate"><span class="pre">temperature</span> <span class="pre">!=</span> <span class="pre">1</span></code> см. <code class="xref py py-meth docutils literal notranslate"><span class="pre">_weighted_choice()</span></code>. Остановка: нет
+исходящих рёбер, либо после <code class="docutils literal notranslate"><span class="pre">min_tokens</span></code> сгенерированных токенов
+встретился токен из <code class="docutils literal notranslate"><span class="pre">stop_tokens</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start_state</strong> (<em>tuple</em><em>[</em><em>str</em><em>, </em><em>...</em><em>] </em><em>| </em><em>list</em><em>[</em><em>str</em><em>]</em>) – Ровно <code class="docutils literal notranslate"><span class="pre">order</span></code> токенов; должно быть ключом <code class="docutils literal notranslate"><span class="pre">transitions</span></code>.</p></li>
+<li><p><strong>max_tokens</strong> (<em>int</em>) – Верхняя оценка числа <em>новых</em> токенов (логика цикла см. ниже).</p></li>
+<li><p><strong>temperature</strong> (<em>float</em>) – Положительное число; &gt;1 — более «равномерный» выбор,
+&lt;1 — ближе к жадному к частым токенам.</p></li>
+<li><p><strong>stop_tokens</strong> (<em>set</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>) – Множество токенов-остановов (по умолчанию конец предложения).</p></li>
+<li><p><strong>min_tokens</strong> (<em>int</em>) – Минимум сгенерированных токенов до допустимой остановки по <code class="docutils literal notranslate"><span class="pre">stop_tokens</span></code>.</p></li>
+<li><p><strong>extra_tokens</strong> (<em>int</em>) – Доп. шаги после <code class="docutils literal notranslate"><span class="pre">max_tokens</span></code> в цикле (запас на длинные хвосты).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Строка из склеенных токенов с правками пробелов у пунктуации (<code class="xref py py-meth docutils literal notranslate"><span class="pre">_join_tokens()</span></code>).</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference internal" href="#markov_core.ModelNotTrainedError" title="markov_core.ModelNotTrainedError"><strong>ModelNotTrainedError</strong></a> – Нет таблицы переходов.</p></li>
+<li><p><strong>ValueError</strong> – Неверная длина <code class="docutils literal notranslate"><span class="pre">start_state</span></code>.</p></li>
+<li><p><a class="reference internal" href="#markov_core.UnknownStateError" title="markov_core.UnknownStateError"><strong>UnknownStateError</strong></a> – <code class="docutils literal notranslate"><span class="pre">start_state</span></code> отсутствует в <code class="docutils literal notranslate"><span class="pre">transitions</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.generate_from_seed">
+<span class="sig-name descname"><span class="pre">generate_from_seed</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seed_text</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">temperature</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extra_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.generate_from_seed"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.generate_from_seed" title="Link to this definition">¶</a></dt>
+<dd><p>То же, что <a class="reference internal" href="#markov_core.MarkovTextGenerator.generate" title="markov_core.MarkovTextGenerator.generate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">generate()</span></code></a>, но начальное состояние — пробельный <code class="docutils literal notranslate"><span class="pre">split</span></code> строки (без <a class="reference internal" href="#markov_core.Tokenizer" title="markov_core.Tokenizer"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tokenizer</span></code></a>).</p>
+<p>Длина <code class="docutils literal notranslate"><span class="pre">seed_text.split()</span></code> должна совпадать с <code class="docutils literal notranslate"><span class="pre">order</span></code>; иначе будет
+<code class="xref py py-exc docutils literal notranslate"><span class="pre">ValueError</span></code> или <a class="reference internal" href="#markov_core.UnknownStateError" title="markov_core.UnknownStateError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">UnknownStateError</span></code></a> из <a class="reference internal" href="#markov_core.MarkovTextGenerator.generate" title="markov_core.MarkovTextGenerator.generate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">generate()</span></code></a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Для согласованности с обучением предпочтительнее <a class="reference internal" href="#markov_core.MarkovTextGenerator.generate_text" title="markov_core.MarkovTextGenerator.generate_text"><code class="xref py py-meth docutils literal notranslate"><span class="pre">generate_text()</span></code></a>,
+где старт парсится через <a class="reference internal" href="#markov_core.Tokenizer.tokenize" title="markov_core.Tokenizer.tokenize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Tokenizer.tokenize()</span></code></a>.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>seed_text</strong> (<em>str</em>)</p></li>
+<li><p><strong>max_tokens</strong> (<em>int</em>)</p></li>
+<li><p><strong>temperature</strong> (<em>float</em>)</p></li>
+<li><p><strong>min_tokens</strong> (<em>int</em>)</p></li>
+<li><p><strong>extra_tokens</strong> (<em>int</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.generate_text">
+<span class="sig-name descname"><span class="pre">generate_text</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start_text</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">temperature</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strict_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.generate_text"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.generate_text" title="Link to this definition">¶</a></dt>
+<dd><p>Высокоуровневая генерация: случайный или производный от строки старт.</p>
+<p><code class="docutils literal notranslate"><span class="pre">start_text</span></code> токенизируется встроенным <a class="reference internal" href="#markov_core.Tokenizer" title="markov_core.Tokenizer"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tokenizer</span></code></a>; последние
+<code class="docutils literal notranslate"><span class="pre">order</span></code> токенов становятся состоянием. Если состояния нет в таблице и
+<code class="docutils literal notranslate"><span class="pre">strict_start</span></code> ложно, берётся <a class="reference internal" href="#markov_core.MarkovTextGenerator.get_random_start_state" title="markov_core.MarkovTextGenerator.get_random_start_state"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_random_start_state()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start_text</strong> (<em>str</em><em> | </em><em>None</em>) – Начало фразы или <code class="docutils literal notranslate"><span class="pre">None</span></code> (полностью случайное состояние).</p></li>
+<li><p><strong>max_tokens</strong> (<em>int</em>) – Ограничение для <a class="reference internal" href="#markov_core.MarkovTextGenerator.generate" title="markov_core.MarkovTextGenerator.generate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">generate()</span></code></a> (должно быть &gt;= 1).</p></li>
+<li><p><strong>temperature</strong> (<em>float</em>) – Температура сэмплирования.</p></li>
+<li><p><strong>min_tokens</strong> (<em>int</em>) – Минимум новых токенов до остановки по <code class="docutils literal notranslate"><span class="pre">stop_tokens</span></code>.</p></li>
+<li><p><strong>stop_tokens</strong> (<em>set</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>) – Пользовательские стоп-токены; <code class="docutils literal notranslate"><span class="pre">None</span></code> — поведение <a class="reference internal" href="#markov_core.MarkovTextGenerator.generate" title="markov_core.MarkovTextGenerator.generate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">generate()</span></code></a>.</p></li>
+<li><p><strong>strict_start</strong> (<em>bool</em>) – Если True, неизвестное состояние из <code class="docutils literal notranslate"><span class="pre">start_text</span></code> → <a class="reference internal" href="#markov_core.UnknownStateError" title="markov_core.UnknownStateError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">UnknownStateError</span></code></a>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Сгенерированная строка.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference internal" href="#markov_core.ModelNotTrainedError" title="markov_core.ModelNotTrainedError"><strong>ModelNotTrainedError</strong></a> – Модель не обучена.</p></li>
+<li><p><strong>ValueError</strong> – Неверные <code class="docutils literal notranslate"><span class="pre">max_tokens</span></code> или <code class="docutils literal notranslate"><span class="pre">min_tokens</span></code>.</p></li>
+<li><p><a class="reference internal" href="#markov_core.UnknownStateError" title="markov_core.UnknownStateError"><strong>UnknownStateError</strong></a> – Неизвестный старт при <code class="docutils literal notranslate"><span class="pre">strict_start=True</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.get_entropy">
+<span class="sig-name descname"><span class="pre">get_entropy</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.get_entropy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.get_entropy" title="Link to this definition">¶</a></dt>
+<dd><p>Средняя по состояниям энтропия исходящего распределения (в битах).</p>
+<p>Для каждого состояния считается <span class="math notranslate nohighlight">\(H = -\sum p \log_2 p\)</span> по нормализованным
+счётчикам; возвращается среднее арифметическое по числу состояний.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#markov_core.ModelNotTrainedError" title="markov_core.ModelNotTrainedError"><strong>ModelNotTrainedError</strong></a> – Модель не обучена.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.get_perplexity">
+<span class="sig-name descname"><span class="pre">get_perplexity</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.get_perplexity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.get_perplexity" title="Link to this definition">¶</a></dt>
+<dd><p>Возвращает <span class="math notranslate nohighlight">\(2^{H}\)</span>, где <span class="math notranslate nohighlight">\(H\)</span> — <a class="reference internal" href="#markov_core.MarkovTextGenerator.get_entropy" title="markov_core.MarkovTextGenerator.get_entropy"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_entropy()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.get_statistics">
+<span class="sig-name descname"><span class="pre">get_statistics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.get_statistics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.get_statistics" title="Link to this definition">¶</a></dt>
+<dd><p>Агрегированные метрики обученной модели (состояния, ветвление, энтропия и пр.).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#markov_core.ModelNotTrainedError" title="markov_core.ModelNotTrainedError"><strong>ModelNotTrainedError</strong></a> – Модель не обучена.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.save_model">
+<span class="sig-name descname"><span class="pre">save_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.save_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.save_model" title="Link to this definition">¶</a></dt>
+<dd><p>Сериализовать order, переходы и счётчики в один pickle-файл.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Формат pickle не безопасен для недоверенных файлов при загрузке.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_path</strong> (<em>str</em><em> | </em><em>Path</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="markov_core.MarkovTextGenerator.load_model">
+<em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/markov_core.html#MarkovTextGenerator.load_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#markov_core.MarkovTextGenerator.load_model" title="Link to this definition">¶</a></dt>
+<dd><p>Восстановить экземпляр из файла, записанного <a class="reference internal" href="#markov_core.MarkovTextGenerator.save_model" title="markov_core.MarkovTextGenerator.save_model"><code class="xref py py-meth docutils literal notranslate"><span class="pre">save_model()</span></code></a>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Не загружайте pickle из ненадёжных источников.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>FileNotFoundError</strong> – Файл отсутствует.</p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>file_path</strong> (<em>str</em><em> | </em><em>Path</em>)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#markov_core.MarkovTextGenerator" title="markov_core.MarkovTextGenerator"><em>MarkovTextGenerator</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-reader">
+<span id="reader"></span><h2><code class="docutils literal notranslate"><span class="pre">reader</span></code><a class="headerlink" href="#module-reader" title="Link to this heading">¶</a></h2>
+<p>Чтение текстовых корпусов из файлов и каталогов.</p>
+<p>Функции ориентированы на связку с <a class="reference internal" href="#module-markov_core" title="markov_core"><code class="xref py py-mod docutils literal notranslate"><span class="pre">markov_core</span></code></a>: перебор кодировок для
+русскоязычных текстов и объединение нескольких <code class="docutils literal notranslate"><span class="pre">.txt</span></code> из одной папки.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="reader.read_texts_from_folder">
+<span class="sig-prename descclassname"><span class="pre">reader.</span></span><span class="sig-name descname"><span class="pre">read_texts_from_folder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">folder_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/reader.html#read_texts_from_folder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#reader.read_texts_from_folder" title="Link to this definition">¶</a></dt>
+<dd><p>Прочитать один файл или все <code class="docutils literal notranslate"><span class="pre">*.txt</span></code> из каталога и вернуть общий текст.</p>
+<p>Если <code class="docutils literal notranslate"><span class="pre">folder_path</span></code> указывает на файл — возвращается его содержимое
+(плюс завершающий <code class="docutils literal notranslate"><span class="pre">\n</span></code>). Если на каталог — файлы читаются в
+лексикографическом порядке имени и склеиваются.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>folder_path</strong> (<em>str</em>) – Путь к <code class="docutils literal notranslate"><span class="pre">.txt</span></code>-файлу или к папке с такими файлами.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Объединённая строка; для каталога без <code class="docutils literal notranslate"><span class="pre">.txt</span></code> — пустая строка.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – Ни одна из перечисленных кодировок не смогла декодировать файл.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">markov_chain</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#module-markov_core"><code class="docutils literal notranslate"><span class="pre">markov_core</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-reader"><code class="docutils literal notranslate"><span class="pre">reader</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">markov_chain</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, markov-chains contributors.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/api.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

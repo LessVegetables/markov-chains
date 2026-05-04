@@ -59,7 +59,7 @@ def main() -> None:
         start_state_len = len(args.start_state.split())
 
         if start_state_len != args.order:
-            print(f"WARNING: overwritting order={args.order} to match the len(start_state)={start_state_len}")
+            print(f"WARNING: overwriting order={args.order} to match len(start_state)={start_state_len}")
         
         order = start_state_len
         generator = MarkovTextGenerator(order=start_state_len)
