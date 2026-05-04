@@ -48,6 +48,7 @@ def main() -> None:
     included_files = [
         "turgenev_mumu.txt",
         "turgenev_dvoryanskoe_gnezdo.txt",
+        "tolstoy_voina_i_mir.txt",
         #"turgenev_nov.txt",
     ]
 
@@ -105,6 +106,8 @@ def main() -> None:
                 min_tokens=args.min_tokens,
                 temperature=args.temperature,
             )
+            if generator.used_random_start:
+                print("Предупреждение: такого старта нет в датасете, сгенерировали случайный текст.")
         else:
             start_state = choose_start_state(generator)
             generated_text = generator.generate(

@@ -4,7 +4,6 @@ from markov_chain.markov_core import (
     MarkovTextGenerator,
     ModelNotTrainedError,
     TooShortTextError,
-    UnknownStateError,
 )
 
 st.html("""
@@ -24,16 +23,18 @@ if st.button("Generate"):
         try:
             generator = MarkovTextGenerator(order=len(words))
             generator.load_default_dataset()
-            output = generator.generate_from_seed(userInput)
+            output = generator.generate_text(userInput)
+            if generator.used_random_start:
+                st.warning(
+                    "Такого начала нет в обученной модели (или оно разбивается на токены иначе). "
+                    "Текст начат со случайного состояния из корпуса."
+                )
             st.write(output)
-        except UnknownStateError:
-            st.error(
-                "Такого начала нет в обученной модели: этих слов подряд нет в корпусе "
-                "или они сегментируются иначе. Попробуйте фразу из стиля текста "
-                "(например, как в примере поля) или добавьте свой корпус и переобучите модель."
-            )
         except ModelNotTrainedError:
-            st.error("Модель не удалось обучить: проверьте, что в data/processed есть тексты для load_default_dataset.")
+            st.error(
+                "Модель не удалось обучить: проверьте, что в data/processed есть "
+                "тексты для load_default_dataset."
+            )
         except TooShortTextError as exc:
             st.error(f"Недостаточно токенов для выбранного порядка цепи: {exc}")
         except ValueError as exc:
