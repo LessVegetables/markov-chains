@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>markov_core &#8212; markov_chain 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../_static/alabaster.css?v=27fed22d" />
+    <script src="../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for markov_core</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Обучение и генерация текста по марковской модели *n-грамм*.</span>
+
+<span class="sd">Состояние цепи — кортеж из ``order`` последовательных токенов; таблица переходов</span>
+<span class="sd">хранит частоты следующего токена для каждого состояния. Токенизацию можно</span>
+<span class="sd">настроить через :class:`Tokenizer` (нормализация «ё», удаление URL/email,</span>
+<span class="sd">поведение регистра).</span>
+
+<span class="sd">Типовой сценарий:</span>
+
+<span class="sd">    &gt;&gt;&gt; from markov_core import MarkovTextGenerator, Tokenizer</span>
+<span class="sd">    &gt;&gt;&gt; gen = MarkovTextGenerator(order=2)</span>
+<span class="sd">    &gt;&gt;&gt; gen.train_from_text(&quot;Пример обучающего текста. Ещё одно предложение.&quot;)</span>
+<span class="sd">    &gt;&gt;&gt; text = gen.generate_text(max_tokens=40)</span>
+
+<span class="sd">Исключения (:exc:`MarkovError` и подклассы) отражают ошибки обучения,</span>
+<span class="sd">генерации и ввода.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">DefaultDict</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.reader</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_texts_from_folder</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">reader</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_texts_from_folder</span>
+
+
+<div class="viewcode-block" id="MarkovError">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MarkovError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Базовая ошибка ядра (обучение, генерация, ввод).&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="EmptyFileError">
+<a class="viewcode-back" href="../api.html#markov_core.EmptyFileError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EmptyFileError</span><span class="p">(</span><span class="n">MarkovError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Файл пустой или после чтения не осталось значимого текста.&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="TooShortTextError">
+<a class="viewcode-back" href="../api.html#markov_core.TooShortTextError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TooShortTextError</span><span class="p">(</span><span class="n">MarkovError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;В тексте недостаточно токенов для выбранного ``order`` (включая граничные случаи).&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="UnknownStateError">
+<a class="viewcode-back" href="../api.html#markov_core.UnknownStateError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">UnknownStateError</span><span class="p">(</span><span class="n">MarkovError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Начальное состояние отсутствует в таблице переходов (жёсткий режим или ``generate``).&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="ModelNotTrainedError">
+<a class="viewcode-back" href="../api.html#markov_core.ModelNotTrainedError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ModelNotTrainedError</span><span class="p">(</span><span class="n">MarkovError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Операция требует обученной модели (таблица переходов пуста).&quot;&quot;&quot;</span></div>
+
+
+
+<span class="n">TransitionTable</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span>
+<span class="sd">&quot;&quot;&quot;Таблица переходов: состояние из ``order`` токенов -&gt; {следующий_токен: счётчик}.&quot;&quot;&quot;</span>
+
+
+<span class="c1"># Имена файлов в ``data/processed`` для :meth:`MarkovTextGenerator.load_default_dataset`.</span>
+<span class="n">DEFAULT_DATASET_FILES</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;turgenev_mumu.txt&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;turgenev_dvoryanskoe_gnezdo.txt&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="Tokenizer">
+<a class="viewcode-back" href="../api.html#markov_core.Tokenizer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Tokenizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Нормализация и разбиение текста на токены перед обучением марковской модели.</span>
+
+<span class="sd">    Токенами считаются последовательности «словных» символов (``\\w+`` в Unicode)</span>
+<span class="sd">    и одиночные знаки препинания. Опционально выполняется удаление URL и e-mail,</span>
+<span class="sd">    подстановка «ё»→«е», а также режим приведения к нижнему регистру с сохранением</span>
+<span class="sd">    заглавных букв в начале предложений.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">lowercase</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">normalize_yo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">remove_urls</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">remove_emails</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">preserve_case_for_sentences</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Args:</span>
+<span class="sd">            lowercase: Приводить регистр к нижнему (см. ``preserve_case_for_sentences``).</span>
+<span class="sd">            normalize_yo: Заменить «ё»/«Ё» на «е»/«Е» до токенизации.</span>
+<span class="sd">            remove_urls: Удалить URL из строки на этапе :meth:`preprocess`.</span>
+<span class="sd">            remove_emails: Удалить адреса e-mail на этапе :meth:`preprocess`.</span>
+<span class="sd">            preserve_case_for_sentences: Если ``lowercase=True``, оставлять заглавные</span>
+<span class="sd">                после конца предложения и у первого токена (см. :meth:`_smart_lowercase`).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lowercase</span> <span class="o">=</span> <span class="n">lowercase</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">normalize_yo</span> <span class="o">=</span> <span class="n">normalize_yo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remove_urls</span> <span class="o">=</span> <span class="n">remove_urls</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remove_emails</span> <span class="o">=</span> <span class="n">remove_emails</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">preserve_case_for_sentences</span> <span class="o">=</span> <span class="n">preserve_case_for_sentences</span>
+
+<div class="viewcode-block" id="Tokenizer.preprocess">
+<a class="viewcode-back" href="../api.html#markov_core.Tokenizer.preprocess">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">preprocess</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Очистка и нормализация сырой строки перед :meth:`tokenize`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            text: Исходный текст.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Строка после опциональных замен и ``strip()``; без разбиения на токены.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_urls</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_remove_urls</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_emails</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_remove_emails</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalize_yo</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_yo</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowercase</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">preserve_case_for_sentences</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_urls</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Удалить URL из текста.&quot;&quot;&quot;</span>
+        <span class="n">url_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;https?://[^\s&lt;&gt;&quot;</span><span class="si">{}</span><span class="s1">|</span><span class="se">\\</span><span class="s1">^`[\]]+&#39;</span>
+        <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">url_pattern</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_emails</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Удалить email-адреса из текста.&quot;&quot;&quot;</span>
+        <span class="n">email_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b&#39;</span>
+        <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">email_pattern</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_yo</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Нормализовать русские Ё/ё к Е/е.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;ё&#39;</span><span class="p">,</span> <span class="s1">&#39;е&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;Ё&#39;</span><span class="p">,</span> <span class="s1">&#39;Е&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Tokenizer.tokenize">
+<a class="viewcode-back" href="../api.html#markov_core.Tokenizer.tokenize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tokenize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Разбить текст на список токенов после :meth:`preprocess`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            text: Входная строка.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Список токенов (слова и отдельные знаки препинания).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preprocess</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="n">tokens</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\w+|[^\w\s]&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">UNICODE</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowercase</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">preserve_case_for_sentences</span><span class="p">:</span>
+            <span class="c1"># Приводим к lowercase, но сохраняем заглавные в начале предложений</span>
+            <span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_smart_lowercase</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">tokens</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_smart_lowercase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tokens</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Умное приведение к lowercase: сохраняет заглавные в начале предложений.&quot;&quot;&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">sentence_starters</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="s1">&#39;!&#39;</span><span class="p">,</span> <span class="s1">&#39;?&#39;</span><span class="p">,</span> <span class="s1">&#39;…&#39;</span><span class="p">,</span> <span class="s1">&#39;...&#39;</span><span class="p">}</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">token</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tokens</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># Первый токен оставляем как есть (вероятно, заглавная)</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">tokens</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">sentence_starters</span><span class="p">:</span>
+                <span class="c1"># После знака конца предложения - оставляем заглавную</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Остальное в lowercase</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">token</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+
+        <span class="k">return</span> <span class="n">result</span>
+
+<div class="viewcode-block" id="Tokenizer.split_sentences">
+<a class="viewcode-back" href="../api.html#markov_core.Tokenizer.split_sentences">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_sentences</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Эвристически разбить текст на предложения (кириллица и латиница).</span>
+
+<span class="sd">        Сокращения с точками временно маскируются, чтобы не резать по ним.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            text: Исходный текст.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Список непустых предложений без лишних пробелов по краям.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Защищаем сокращения</span>
+        <span class="n">abbreviations</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;(?:т\.е|т\.к|и\.т\.д|и\.т\.п|др|г|гг|ул|пр|тел|etc|vs|e\.g|i\.e|mr|mrs|ms|dr|prof)&#39;</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">rf</span><span class="s1">&#39;(</span><span class="si">{</span><span class="n">abbreviations</span><span class="si">}</span><span class="s1">)\.&#39;</span><span class="p">,</span> <span class="sa">r</span><span class="s1">&#39;\1&lt;DOT&gt;&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+
+        <span class="c1"># Разбиваем по концам предложений</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;(?&lt;=[.!?…])\s+(?=[А-ЯA-Z«&quot;</span><span class="se">\&#39;</span><span class="s1">\(])&#39;</span>
+        <span class="n">sentences</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+        <span class="c1"># Восстанавливаем точки в сокращениях и очищаем</span>
+        <span class="n">sentences</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;&lt;DOT&gt;&#39;</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sentences</span> <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+
+        <span class="k">return</span> <span class="n">sentences</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MarkovTextGenerator">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MarkovTextGenerator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Марковский генератор текста по частотам *n-грамм* с фиксированным ``order``.</span>
+
+<span class="sd">    После обучения в ``transitions`` лежит таблица: состояние из ``order``</span>
+<span class="sd">    подряд идущих токенов отображается на счётчики возможных продолжений.</span>
+<span class="sd">    Сэмплирование следующего токена учитывает эти счётчики; параметр</span>
+<span class="sd">    ``temperature`` смягчает или усиливает пики распределения</span>
+<span class="sd">    (см. :meth:`_weighted_choice`).</span>
+
+<span class="sd">    Для ввода из файлов и сериализации см. :meth:`read_text`, :meth:`save_model`,</span>
+<span class="sd">    :meth:`load_model`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;order&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;_tokenizer&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;transitions&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;_total_transitions&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;_token_frequencies&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;_source_token_count&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">order</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">tokenizer</span><span class="p">:</span> <span class="n">Tokenizer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Args:</span>
+<span class="sd">            order: Длина контекста (число токенов в состоянии цепи). Должно быть &gt;= 1.</span>
+<span class="sd">            tokenizer: Кастомный :class:`Tokenizer`; иначе создаётся экземпляр по умолчанию.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: Если ``order &lt; 1``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">order</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;order must be &gt;= 1&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">order</span> <span class="o">=</span> <span class="n">order</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tokenizer</span> <span class="o">=</span> <span class="n">tokenizer</span> <span class="k">if</span> <span class="n">tokenizer</span> <span class="k">else</span> <span class="n">Tokenizer</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span> <span class="n">TransitionTable</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_total_transitions</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source_token_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="s2">&quot;trained&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="k">else</span> <span class="s2">&quot;untrained&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;MarkovTextGenerator(order=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">, states=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+<div class="viewcode-block" id="MarkovTextGenerator.clear">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.clear">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Очистить таблицу переходов и вспомогательную статистику (как у нового экземпляра).&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_total_transitions</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source_token_count</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.is_trained">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.is_trained">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_trained</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True, если в ``transitions`` есть хотя бы одно состояние.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.get_random_start_state">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.get_random_start_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_random_start_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Случайно выбрать состояние из ключей ``transitions``.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ModelNotTrainedError: Если модель не обучена.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_trained</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="n">ModelNotTrainedError</span><span class="p">(</span><span class="s2">&quot;Модель не обучена.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.read_text">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.read_text">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_text</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Прочитать файл в строку, перебирая типичные кодировки (UTF-8, CP1251, …).</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            file_path: Путь к текстовому файлу.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Текст без ведущих и завершающих пробелов.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            FileNotFoundError: Если файл не найден.</span>
+<span class="sd">            EmptyFileError: Если ни одна кодировка не подошла или файл пустой/пробельный.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Файл не найден: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">encodings</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">,</span> <span class="s2">&quot;utf-8-sig&quot;</span><span class="p">,</span> <span class="s2">&quot;cp1251&quot;</span><span class="p">,</span> <span class="s2">&quot;iso-8859-5&quot;</span><span class="p">,</span> <span class="s2">&quot;koi8-r&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">encoding</span> <span class="ow">in</span> <span class="n">encodings</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">encoding</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">break</span>
+            <span class="k">except</span> <span class="ne">UnicodeDecodeError</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">EmptyFileError</span><span class="p">(</span><span class="s2">&quot;Файл пустой или содержит только пробелы.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">text</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.tokenize">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.tokenize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tokenize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Токенизировать текст и проверить, что токенов больше ``order``.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            TooShortTextError: Если длина последовательности токенов &lt;= ``order``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tokenizer</span><span class="o">.</span><span class="n">tokenize</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">TooShortTextError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Текст слишком короткий для order=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2">. Нужно больше </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> токенов.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">tokens</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.split_sentences">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.split_sentences">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_sentences</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;То же, что :meth:`Tokenizer.split_sentences` у встроенного токенизатора.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tokenizer</span><span class="o">.</span><span class="n">split_sentences</span><span class="p">(</span><span class="n">text</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.build_transitions">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.build_transitions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_transitions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tokens</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">TransitionTable</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Построить и записать в ``self.transitions`` таблицу частот переходов.</span>
+
+<span class="sd">        Для каждого среза ``tokens[i : i + order]`` увеличивается счётчик</span>
+<span class="sd">        следующего токена ``tokens[i + order]``. Предыдущее содержимое таблицы</span>
+<span class="sd">        заменяется.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            tokens: Уже сегментированный текст (длина должна быть &gt; ``order``).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Новая таблица переходов (тот же объект, что и ``self.transitions``).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">table</span><span class="p">:</span> <span class="n">DefaultDict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">DefaultDict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">int</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source_token_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">):</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">tokens</span><span class="p">[</span><span class="n">i</span> <span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">])</span>
+            <span class="n">next_token</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">]</span>
+            <span class="n">table</span><span class="p">[</span><span class="n">state</span><span class="p">][</span><span class="n">next_token</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="p">{</span><span class="n">state</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="n">next_map</span><span class="p">)</span> <span class="k">for</span> <span class="n">state</span><span class="p">,</span> <span class="n">next_map</span> <span class="ow">in</span> <span class="n">table</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_total_transitions</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="nb">sum</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="k">for</span> <span class="n">counts</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_build_token_frequencies</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_token_frequencies</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">next_map</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">next_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span><span class="p">[</span><span class="n">token</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">count</span>
+
+<div class="viewcode-block" id="MarkovTextGenerator.train_from_text">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.train_from_text">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">train_from_text</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TransitionTable</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Обучить модель на одной строке: токенизация и :meth:`build_transitions`.&quot;&quot;&quot;</span>
+        <span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenize</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_transitions</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.train_from_file">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.train_from_file">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">train_from_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TransitionTable</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Прочитать файл и обучить модель (:meth:`read_text` + :meth:`train_from_text`).&quot;&quot;&quot;</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_from_text</span><span class="p">(</span><span class="n">text</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.train_from_multiple_files">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.train_from_multiple_files">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">train_from_multiple_files</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_paths</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">TransitionTable</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Склеить тексты файлов через пробел и обучить модель одним вызовом.&quot;&quot;&quot;</span>
+        <span class="n">all_text</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">file_paths</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="n">all_text</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="n">combined_text</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">all_text</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_from_text</span><span class="p">(</span><span class="n">combined_text</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.load_default_dataset">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.load_default_dataset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_default_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TransitionTable</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Обучить на встроенном корпусе: каталог ``data/processed`` у корня репозитория и :data:`DEFAULT_DATASET_FILES`.&quot;&quot;&quot;</span>
+        <span class="n">data_folder</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/</span> <span class="s2">&quot;data&quot;</span> <span class="o">/</span> <span class="s2">&quot;processed&quot;</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="k">for</span> <span class="n">file_name</span> <span class="ow">in</span> <span class="n">DEFAULT_DATASET_FILES</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">+=</span> <span class="n">read_texts_from_folder</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">data_folder</span> <span class="o">/</span> <span class="n">file_name</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_from_text</span><span class="p">(</span><span class="n">text</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.get_transition_snapshot">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.get_transition_snapshot">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_transition_snapshot</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Первые ``limit`` состояний с отсортированными исходящими переходами и вероятностями.</span>
+
+<span class="sd">        Удобно для отладки и UI (просмотр «куда можно пойти» из состояния).</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            limit: Сколько состояний вернуть (в современном Python порядок ключей</span>
+<span class="sd">                ``dict`` соответствует порядку вставки при обучении).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Список словарей с ключами ``state`` и ``transitions``; внутри — ``token``, ``count``, ``probability``.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ModelNotTrainedError: Если модель пуста.</span>
+<span class="sd">            ValueError: Если ``limit &lt; 1``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ModelNotTrainedError</span><span class="p">(</span><span class="s2">&quot;Модель не обучена.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">limit</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;limit must be &gt;= 1&quot;</span><span class="p">)</span>
+
+        <span class="n">snapshot</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">state</span><span class="p">,</span> <span class="n">next_map</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">items</span><span class="p">())[:</span><span class="n">limit</span><span class="p">]:</span>
+            <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">next_map</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="n">transitions</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;token&quot;</span><span class="p">:</span> <span class="n">token</span><span class="p">,</span>
+                    <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="n">count</span><span class="p">,</span>
+                    <span class="s2">&quot;probability&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">count</span> <span class="o">/</span> <span class="n">total</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+                <span class="p">}</span>
+                <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">next_map</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">item</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">snapshot</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="n">state</span><span class="p">,</span> <span class="s2">&quot;transitions&quot;</span><span class="p">:</span> <span class="n">transitions</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">snapshot</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.generate">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.generate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">start_state</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">max_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">stop_tokens</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">min_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="n">extra_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Продолжить текст из заданного *обученного* состояния длины ``order``.</span>
+
+<span class="sd">        На каждом шаге выбирается следующий токен по весам из ``transitions``;</span>
+<span class="sd">        при ``temperature != 1`` см. :meth:`_weighted_choice`. Остановка: нет</span>
+<span class="sd">        исходящих рёбер, либо после ``min_tokens`` сгенерированных токенов</span>
+<span class="sd">        встретился токен из ``stop_tokens``.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            start_state: Ровно ``order`` токенов; должно быть ключом ``transitions``.</span>
+<span class="sd">            max_tokens: Верхняя оценка числа *новых* токенов (логика цикла см. ниже).</span>
+<span class="sd">            temperature: Положительное число; &gt;1 — более «равномерный» выбор,</span>
+<span class="sd">                &lt;1 — ближе к жадному к частым токенам.</span>
+<span class="sd">            stop_tokens: Множество токенов-остановов (по умолчанию конец предложения).</span>
+<span class="sd">            min_tokens: Минимум сгенерированных токенов до допустимой остановки по ``stop_tokens``.</span>
+<span class="sd">            extra_tokens: Доп. шаги после ``max_tokens`` в цикле (запас на длинные хвосты).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Строка из склеенных токенов с правками пробелов у пунктуации (:meth:`_join_tokens`).</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ModelNotTrainedError: Нет таблицы переходов.</span>
+<span class="sd">            ValueError: Неверная длина ``start_state``.</span>
+<span class="sd">            UnknownStateError: ``start_state`` отсутствует в ``transitions``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ModelNotTrainedError</span><span class="p">(</span><span class="s2">&quot;Модель не обучена. Сначала вызовите train_from_text(...).&quot;</span><span class="p">)</span>
+
+        <span class="n">state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">start_state</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">state</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Начальное состояние должно содержать ровно </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> токенов.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">UnknownStateError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Неизвестное начальное состояние: </span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">stop_tokens</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stop_tokens</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="s2">&quot;!&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">}</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+        <span class="n">current_state</span> <span class="o">=</span> <span class="n">state</span>
+
+        <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_tokens</span> <span class="o">+</span> <span class="n">extra_tokens</span><span class="p">):</span>
+            <span class="n">next_options</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">current_state</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">next_options</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="n">next_token</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_weighted_choice</span><span class="p">(</span><span class="n">next_options</span><span class="p">,</span> <span class="n">temperature</span><span class="p">)</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">next_token</span><span class="p">)</span>
+
+            <span class="n">generated_tokens</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">generated_tokens</span> <span class="o">&gt;=</span> <span class="n">min_tokens</span> <span class="ow">and</span> <span class="n">next_token</span> <span class="ow">in</span> <span class="n">stop_tokens</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="n">current_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">order</span> <span class="p">:])</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_join_tokens</span><span class="p">(</span><span class="n">result</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.generate_from_seed">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.generate_from_seed">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_from_seed</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">seed_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">max_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">min_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="n">extra_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;То же, что :meth:`generate`, но начальное состояние — пробельный ``split`` строки (без :class:`Tokenizer`).</span>
+
+<span class="sd">        Длина ``seed_text.split()`` должна совпадать с ``order``; иначе будет</span>
+<span class="sd">        :exc:`ValueError` или :exc:`UnknownStateError` из :meth:`generate`.</span>
+
+<span class="sd">        Note:</span>
+<span class="sd">            Для согласованности с обучением предпочтительнее :meth:`generate_text`,</span>
+<span class="sd">            где старт парсится через :meth:`Tokenizer.tokenize`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">start_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">seed_text</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
+            <span class="n">start_state</span><span class="o">=</span><span class="n">start_state</span><span class="p">,</span>
+            <span class="n">max_tokens</span><span class="o">=</span><span class="n">max_tokens</span><span class="p">,</span>
+            <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+            <span class="n">min_tokens</span><span class="o">=</span><span class="n">min_tokens</span><span class="p">,</span>
+            <span class="n">extra_tokens</span><span class="o">=</span><span class="n">extra_tokens</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.generate_text">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.generate_text">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_text</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">start_text</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">max_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">min_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+        <span class="n">stop_tokens</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">strict_start</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Высокоуровневая генерация: случайный или производный от строки старт.</span>
+
+<span class="sd">        ``start_text`` токенизируется встроенным :class:`Tokenizer`; последние</span>
+<span class="sd">        ``order`` токенов становятся состоянием. Если состояния нет в таблице и</span>
+<span class="sd">        ``strict_start`` ложно, берётся :meth:`get_random_start_state`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            start_text: Начало фразы или ``None`` (полностью случайное состояние).</span>
+<span class="sd">            max_tokens: Ограничение для :meth:`generate` (должно быть &gt;= 1).</span>
+<span class="sd">            temperature: Температура сэмплирования.</span>
+<span class="sd">            min_tokens: Минимум новых токенов до остановки по ``stop_tokens``.</span>
+<span class="sd">            stop_tokens: Пользовательские стоп-токены; ``None`` — поведение :meth:`generate`.</span>
+<span class="sd">            strict_start: Если True, неизвестное состояние из ``start_text`` → :exc:`UnknownStateError`.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Сгенерированная строка.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ModelNotTrainedError: Модель не обучена.</span>
+<span class="sd">            ValueError: Неверные ``max_tokens`` или ``min_tokens``.</span>
+<span class="sd">            UnknownStateError: Неизвестный старт при ``strict_start=True``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ModelNotTrainedError</span><span class="p">(</span><span class="s2">&quot;Модель не обучена. Сначала вызовите train_from_text(...).&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">max_tokens</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;max_tokens must be &gt;= 1&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">min_tokens</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;min_tokens must be &gt;= 0&quot;</span><span class="p">)</span>
+
+        <span class="n">state</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">start_text</span><span class="p">:</span>
+            <span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tokenizer</span><span class="o">.</span><span class="n">tokenize</span><span class="p">(</span><span class="n">start_text</span><span class="p">)</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">tokens</span><span class="p">[</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">order</span> <span class="p">:])</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">state</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span> <span class="ow">or</span> <span class="n">state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">strict_start</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">UnknownStateError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Неизвестное начальное состояние: </span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_random_start_state</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_random_start_state</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
+            <span class="n">state</span><span class="p">,</span>
+            <span class="n">max_tokens</span><span class="o">=</span><span class="n">max_tokens</span><span class="p">,</span>
+            <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+            <span class="n">stop_tokens</span><span class="o">=</span><span class="n">stop_tokens</span><span class="p">,</span>
+            <span class="n">min_tokens</span><span class="o">=</span><span class="n">min_tokens</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_weighted_choice</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Выбрать ключ из ``options`` пропорционально весам с учётом ``temperature``.</span>
+
+<span class="sd">        При ``temperature == 1`` или одном ключе — сэмплирование по сырым счётчикам.</span>
+<span class="sd">        Иначе — логарифм весов, деление на ``temperature`` и стабилизированный softmax.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">temperature</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;temperature must be &gt; 0&quot;</span><span class="p">)</span>
+
+        <span class="n">tokens</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">options</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">1.0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">options</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">choices</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">log_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">count</span><span class="p">)</span> <span class="k">for</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">options</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+        <span class="n">scaled_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">w</span> <span class="o">/</span> <span class="n">temperature</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">log_weights</span><span class="p">]</span>
+        <span class="n">max_weight</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">scaled_weights</span><span class="p">)</span>
+        <span class="n">exp_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="n">max_weight</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">scaled_weights</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">choices</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">exp_weights</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+<div class="viewcode-block" id="MarkovTextGenerator.get_entropy">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.get_entropy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entropy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Средняя по состояниям энтропия исходящего распределения (в битах).</span>
+
+<span class="sd">        Для каждого состояния считается :math:`H = -\\sum p \\log_2 p` по нормализованным</span>
+<span class="sd">        счётчикам; возвращается среднее арифметическое по числу состояний.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ModelNotTrainedError: Модель не обучена.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ModelNotTrainedError</span><span class="p">(</span><span class="s2">&quot;Модель не обучена.&quot;</span><span class="p">)</span>
+
+        <span class="n">total_entropy</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">next_map</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">next_map</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="n">state_entropy</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="k">for</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">next_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="n">prob</span> <span class="o">=</span> <span class="n">count</span> <span class="o">/</span> <span class="n">total</span>
+                <span class="k">if</span> <span class="n">prob</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">state_entropy</span> <span class="o">-=</span> <span class="n">prob</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">prob</span><span class="p">)</span>
+            <span class="n">total_entropy</span> <span class="o">+=</span> <span class="n">state_entropy</span>
+
+        <span class="k">return</span> <span class="n">total_entropy</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.get_perplexity">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.get_perplexity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_perplexity</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Возвращает :math:`2^{H}`, где :math:`H` — :meth:`get_entropy`.&quot;&quot;&quot;</span>
+        <span class="n">entropy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_entropy</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">math</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">entropy</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.get_statistics">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.get_statistics">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_statistics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Агрегированные метрики обученной модели (состояния, ветвление, энтропия и пр.).</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ModelNotTrainedError: Модель не обучена.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ModelNotTrainedError</span><span class="p">(</span><span class="s2">&quot;Модель не обучена.&quot;</span><span class="p">)</span>
+
+        <span class="n">unique_states</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">)</span>
+        <span class="n">unique_tokens</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span><span class="p">)</span>
+        <span class="n">avg_branching</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">/</span> <span class="n">unique_states</span>
+        <span class="n">max_branching</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;order&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">,</span>
+            <span class="s2">&quot;unique_states&quot;</span><span class="p">:</span> <span class="n">unique_states</span><span class="p">,</span>
+            <span class="s2">&quot;unique_tokens&quot;</span><span class="p">:</span> <span class="n">unique_tokens</span><span class="p">,</span>
+            <span class="s2">&quot;source_tokens&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_source_token_count</span><span class="p">,</span>
+            <span class="s2">&quot;total_transitions&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_total_transitions</span><span class="p">,</span>
+            <span class="s2">&quot;avg_branching_factor&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">avg_branching</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+            <span class="s2">&quot;max_branching_factor&quot;</span><span class="p">:</span> <span class="n">max_branching</span><span class="p">,</span>
+            <span class="s2">&quot;entropy_bits&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_entropy</span><span class="p">(),</span> <span class="mi">4</span><span class="p">),</span>
+            <span class="s2">&quot;perplexity&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_perplexity</span><span class="p">(),</span> <span class="mi">4</span><span class="p">),</span>
+            <span class="s2">&quot;vocabulary_coverage&quot;</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">unique_tokens</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_source_token_count</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.save_model">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.save_model">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Сериализовать order, переходы и счётчики в один pickle-файл.</span>
+
+<span class="sd">        Warning:</span>
+<span class="sd">            Формат pickle не безопасен для недоверенных файлов при загрузке.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;order&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">order</span><span class="p">,</span>
+                    <span class="s2">&quot;transitions&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">,</span>
+                    <span class="s2">&quot;_total_transitions&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_total_transitions</span><span class="p">,</span>
+                    <span class="s2">&quot;_token_frequencies&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_token_frequencies</span><span class="p">,</span>
+                    <span class="s2">&quot;_source_token_count&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_source_token_count</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="n">f</span><span class="p">,</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MarkovTextGenerator.load_model">
+<a class="viewcode-back" href="../api.html#markov_core.MarkovTextGenerator.load_model">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_model</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MarkovTextGenerator</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Восстановить экземпляр из файла, записанного :meth:`save_model`.</span>
+
+<span class="sd">        Warning:</span>
+<span class="sd">            Не загружайте pickle из ненадёжных источников.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            FileNotFoundError: Файл отсутствует.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Файл модели не найден: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="n">instance</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;order&quot;</span><span class="p">])</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;transitions&quot;</span><span class="p">]</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">_total_transitions</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;_total_transitions&quot;</span><span class="p">]</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">_token_frequencies</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;_token_frequencies&quot;</span><span class="p">]</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">_source_token_count</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_source_token_count&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">instance</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_join_tokens</span><span class="p">(</span><span class="n">tokens</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Склеить токены пробелом и убрать лишние пробелы у пунктуации и скобок.&quot;&quot;&quot;</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\s+([,.;:!?])&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;\1&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([«(\[{])\s+&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;\1&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\s+([»)\]}])&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;\1&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">text</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">markov_chain</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, markov-chains contributors.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
