@@ -9,20 +9,24 @@ from markov_chain.markov_core import (
 st.html("""<script defer src="https://stat.gehrman.me/script.js" data-website-id="025ade9a-2a56-494f-a07a-21d6e4b07019"></script>""")
 
 
-@st.cache_resource
-def load_model_cached(order):
-    mcGen = MarkovTextGenerator(order=order)
-    mcGen.load_default_dataset()
-    return mcGen
+def generate_text():
+    seed = st.session_state.seed
+    if seed is not None:
+        start_state = generator.get_random_start_state(seed)
 
+    user_input = st.session_state.user_input
+    max_tokens = st.session_state.max_tokens
+    min_tokens = st.session_state.min_tokens
+    temperature = st.session_state.temperature
 
-def generate_text(generator: MarkovTextGenerator, userInput: str) -> str:
-    output = ""
-    if len(userInput.split()) == 0:
-        st.error("Введите хотя бы три слова в начале цепи.")
-    else:
+    if len(user_input.split()) >= 3:
         try:
-            output = generator.generate_from_seed(userInput)
+            st.session_state.output = generator.generate_text(
+                                                    start_text=user_input,
+                                                    max_tokens=max_tokens,
+                                                    min_tokens=min_tokens,
+                                                    temperature=temperature,
+                                                )
             if generator.used_random_start:
                 st.warning(
                     "Такого начала нет в обученной модели (или оно разбивается на токены иначе). "
@@ -45,29 +49,38 @@ def generate_text(generator: MarkovTextGenerator, userInput: str) -> str:
             st.error(f"Ошибка модели Маркова: {exc}")
         except OSError as exc:
             st.error(f"Не удалось прочитать данные или сохранить временные файлы: {exc}")
-    return output
 
 
-def on_input_change():
-    user_input = st.session_state.user_input
-    st.session_state.output = generate_text(generator, user_input)
+default = "И он начал"
+
+if "user_input" not in st.session_state:
+    st.session_state.user_input = default
+
+if len(st.session_state.user_input) == 0:
+        st.error("Введите хотя бы три слова в начале цепи.")
+else:
+    generator = MarkovTextGenerator(order=len(st.session_state.user_input.split()))
+    generator.load_default_dataset()
+
+with st.sidebar:
+    st.header("Parameters")
+    st.session_state.max_tokens = st.slider("Max tokens", 10, 200, 80, 10)
+    st.session_state.min_tokens = st.slider("Min tokens", 5, 100, 20, 5)
+    st.session_state.temperature = st.slider("Temperature", 0.1, 2.0, 1.0, 0.1)
+    use_random_seed = st.checkbox("Random seed", value=True)
+    st.session_state.seed = None if use_random_seed else st.number_input("Seed", min_value=0, value=42)
 
 
-userInput = "И он начал"
-generator = load_model_cached(order=len(userInput.split()))
-generator.load_default_dataset()
-
-default = "И он начал" #ему объяснять
-userInput = st.text_input(
+st.text_input(
     "Start of Markov Chain",
     value=default,
     label_visibility="hidden",
     key="user_input",
-    on_change=on_input_change
+    on_change=generate_text
 )
 
 if st.button("Generate"):
     st.html("<script>umami.track('generate-clicked')</script>")
-    st.session_state.output = generate_text(generator, userInput)
+    generate_text()
 
 st.write(st.session_state.get("output", ""))
