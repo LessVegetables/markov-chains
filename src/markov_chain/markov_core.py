@@ -231,9 +231,14 @@ class MarkovTextGenerator:
         """
         return bool(self.transitions)
 
-    def get_random_start_state(self) -> tuple[str, ...]:
+    def get_random_start_state(self, seed: int = None) -> tuple[str, ...]:
         """
         Возвращает случайное начальное состояние из обученной модели.
+
+        Параметры
+        ----------
+        seed: int = None
+            Sead для генрации.
 
         Возвращает
         ----------
@@ -245,6 +250,9 @@ class MarkovTextGenerator:
         ModelNotTrainedError
             Если модель еще не обучена.
         """
+        if seed is not None:
+            random.seed(seed)
+
         if not self.is_trained():
             raise ModelNotTrainedError("Модель не обучена.")
         return random.choice(list(self.transitions.keys()))
